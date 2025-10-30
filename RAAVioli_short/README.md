@@ -14,6 +14,8 @@ chmod +x setup_short.sh
 ./setup_short.sh
 ```
 
+The setup script bootstraps a Micromamba-based environment. If `micromamba` is not already on your `PATH`, it will be downloaded to `~/.local/bin/micromamba` by default; override this location by exporting `MICROMAMBA_BIN` before running the script. After installation, activate the environment with `micromamba activate RAAVioliShort_env` whenever you want to launch the pipeline manually.
+
 ---
 
 ## Output
@@ -95,7 +97,7 @@ Path to the mixed genome FASTA used for alignment (see Note 3 below).
 Path to the vector or viral genome FASTA used for identifying vector-derived reads.
 The index must be in the same directory. If you do not have it you can create it by running:
 ```
-conda activate RAAVioliShort_env
+micromamba activate RAAVioliShort_env
 bwa index /path/to/vectorgenome.fa
 ```
 

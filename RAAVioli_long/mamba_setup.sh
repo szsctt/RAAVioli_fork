@@ -9,28 +9,66 @@ DIR="$(pwd)"
 LOG_DIR="$DIR/logs"
 CONFIG_FILE="$DIR/config.txt"
 
+
 # --- PRECHECKS ---
 mkdir -p "$LOG_DIR"
 
-if ! command -v conda &> /dev/null; then
-  echo "[ERROR] Conda not found. Please install Miniconda or Mambaforge first and re-run this script."
+# --- LOCATE ENV TOOL ---
+if command -v micromamba &> /dev/null; then
+  ENVTOOL="micromamba"
+  ENVTOOL_CMD="$(command -v micromamba)"
+elif command -v mamba &> /dev/null; then
+  ENVTOOL="mamba"
+  ENVTOOL_CMD="$(command -v mamba)"
+elif command -v conda &> /dev/null; then
+  ENVTOOL="conda"
+  ENVTOOL_CMD="$(command -v conda)"
+else
+  echo "[ERROR] No environment tool (micromamba, mamba, conda) found. Please install one and re-run this script."
   exit 1
 fi
 
-# --- STEP 1: LOCATE OR INSTALL MAMBA ---
-if command -v mamba &> /dev/null; then
-  echo "[INFO] Using system mamba: $(which mamba)"
-  MAMBA_CMD="mamba"
-else
-  echo "[WARN] Mamba not found. Creating helper environment '$MAMBA_ENV'..."
-  if conda env list | grep -q "^$MAMBA_ENV\s"; then
-    echo "[INFO] Helper environment '$MAMBA_ENV' already exists."
-  else
-    conda create -y -n "$MAMBA_ENV" -c conda-forge python=3.10 mamba
-  fi
 
-  MAMBA_CMD="conda run -n $MAMBA_ENV mamba"
-  echo "[INFO] Using mamba from helper environment '$MAMBA_ENV'."
+# --- STEP 1: ENV MANAGEMENT ---
+if [ "$ENVTOOL" = "micromamba" ]; then
+  if "$ENVTOOL_CMD" env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -Fxq "$ENV_NAME"; then
+    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
+    if [[ -f "$YML_FILE" ]]; then
+      "$ENVTOOL_CMD" install -y -n "$ENV_NAME" --file "$YML_FILE" --prune
+    else
+      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
+    fi
+  else
+    echo "[INFO] Creating new environment '$ENV_NAME'..."
+    "$ENVTOOL_CMD" create -y -n "$ENV_NAME" --file "$YML_FILE"
+  fi
+elif [ "$ENVTOOL" = "mamba" ]; then
+  if "$ENVTOOL_CMD" env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -Fxq "$ENV_NAME"; then
+    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
+    if [[ -f "$YML_FILE" ]]; then
+      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
+    else
+      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
+    fi
+  else
+    echo "[INFO] Creating new environment '$ENV_NAME'..."
+    "$ENVTOOL_CMD" create -y -n "$ENV_NAME" -c conda-forge python=3.9
+    if [[ -f "$YML_FILE" ]]; then
+      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
+    fi
+  fi
+elif [ "$ENVTOOL" = "conda" ]; then
+  if "$ENVTOOL_CMD" env list | awk '{print $1}' | grep -Fxq "$ENV_NAME"; then
+    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
+    if [[ -f "$YML_FILE" ]]; then
+      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
+    else
+      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
+    fi
+  else
+    echo "[INFO] Creating new environment '$ENV_NAME'..."
+    "$ENVTOOL_CMD" env create -n "$ENV_NAME" -f "$YML_FILE"
+  fi
 fi
 
 # --- STEP 2: CREATE OR UPDATE MAIN ENVIRONMENT ---
@@ -49,11 +87,15 @@ else
   fi
 fi
 
+
 # --- STEP 3: ACTIVATE MAIN ENVIRONMENT ---
-eval "$(conda shell.bash hook)"
-set +u
-conda activate "$ENV_NAME"
-set -u
+if [ "$ENVTOOL" = "micromamba" ]; then
+  eval "$("$ENVTOOL_CMD" shell hook -s bash)"
+  micromamba activate "$ENV_NAME"
+elif [ "$ENVTOOL" = "mamba" ] || [ "$ENVTOOL" = "conda" ]; then
+  eval "$("$ENVTOOL_CMD" shell.bash hook)"
+  "$ENVTOOL" activate "$ENV_NAME"
+fi
 
 # --- FIX LOCALE (for R LC_CTYPE errors) ---
 export LC_ALL=en_US.UTF-8
@@ -120,4 +162,10 @@ echo "  - Config file: $CONFIG_FILE"
 echo "  - Log file: $LOG_DIR/versions.log"
 echo ""
 echo "To activate your environment, run:"
-echo "    conda activate $ENV_NAME"
+if [ "$ENVTOOL" = "micromamba" ]; then
+  echo "    micromamba activate $ENV_NAME"
+elif [ "$ENVTOOL" = "mamba" ]; then
+  echo "    mamba activate $ENV_NAME"
+else
+  echo "    conda activate $ENV_NAME"
+fi
