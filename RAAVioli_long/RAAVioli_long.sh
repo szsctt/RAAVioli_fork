@@ -23,16 +23,34 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 
 ENV_NAME="RAAVioliLongRMamba_env"
-if command -v conda >/dev/null 2>&1; then
-    # Load conda shell integration
-    eval "$(conda shell.bash hook)"
-    conda activate "${ENV_NAME}" || {
-        echo "[ERROR] Failed to activate conda environment: ${ENV_NAME}"
+
+# --- LOCATE ENV TOOL ---
+if command -v micromamba >/dev/null 2>&1; then
+    ENVTOOL="micromamba"
+    ENVTOOL_CMD="$(command -v micromamba)"
+elif command -v mamba >/dev/null 2>&1; then
+    ENVTOOL="mamba"
+    ENVTOOL_CMD="$(command -v mamba)"
+elif command -v conda >/dev/null 2>&1; then
+    ENVTOOL="conda"
+    ENVTOOL_CMD="$(command -v conda)"
+else
+    echo "[ERROR] No environment tool (micromamba, mamba, conda) found. Please install one and run setup."
+    exit 1
+fi
+
+if [ "$ENVTOOL" = "micromamba" ]; then
+    eval "$($ENVTOOL_CMD shell hook -s bash)"
+    micromamba activate "$ENV_NAME" || {
+        echo "[ERROR] Failed to activate micromamba environment: ${ENV_NAME}"
         exit 1
     }
-else
-    echo "[ERROR] conda not found. Please install Miniconda/Mamba and run setup first."
-    exit 1
+elif [ "$ENVTOOL" = "mamba" ] || [ "$ENVTOOL" = "conda" ]; then
+    eval "$($ENVTOOL_CMD shell.bash hook)"
+    "$ENVTOOL" activate "$ENV_NAME" || {
+        echo "[ERROR] Failed to activate $ENVTOOL environment: ${ENV_NAME}"
+        exit 1
+    }
 fi
 set -euo pipefail
 source "$CONFIG_FILE"

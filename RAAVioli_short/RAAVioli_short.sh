@@ -2,6 +2,7 @@ RAAVIOLIDIR=$(pwd)
 echo $RAAVIOLIDIR
 export RAAVIOLIDIR
 
+
 ENV_NAME="RAAVioliShort_env"
 MICROMAMBA_BIN_DEFAULT="$HOME/.local/bin/micromamba"
 MICROMAMBA_BIN="${MICROMAMBA_BIN:-$MICROMAMBA_BIN_DEFAULT}"
@@ -14,28 +15,42 @@ ensure_path_contains() {
     esac
 }
 
+# --- LOCATE ENV TOOL ---
 if command -v micromamba >/dev/null 2>&1; then
-    MICROMAMBA_CMD="$(command -v micromamba)"
-elif [ -x "$MICROMAMBA_BIN" ]; then
-    MICROMAMBA_CMD="$MICROMAMBA_BIN"
+    ENVTOOL="micromamba"
+    ENVTOOL_CMD="$(command -v micromamba)"
+elif command -v mamba >/dev/null 2>&1; then
+    ENVTOOL="mamba"
+    ENVTOOL_CMD="$(command -v mamba)"
+elif command -v conda >/dev/null 2>&1; then
+    ENVTOOL="conda"
+    ENVTOOL_CMD="$(command -v conda)"
 else
-    echo "[ERROR] micromamba not found. Please run setup to install it or set MICROMAMBA_BIN."
+    echo "[ERROR] No environment tool (micromamba, mamba, conda) found. Please install one and run setup_short.sh."
     exit 1
 fi
 
-ensure_path_contains "$(dirname "$MICROMAMBA_CMD")"
-export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/micromamba}"
-mkdir -p "$MAMBA_ROOT_PREFIX"
-
-if ! eval "$("$MICROMAMBA_CMD" shell hook -s bash)"; then
-    echo "[ERROR] Failed to initialize micromamba shell integration."
-    exit 1
+ensure_path_contains "$(dirname "$ENVTOOL_CMD")"
+if [ "$ENVTOOL" = "micromamba" ]; then
+    export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/micromamba}"
+    mkdir -p "$MAMBA_ROOT_PREFIX"
 fi
 
-if ! micromamba activate "${ENV_NAME}"; then
-    echo "[ERROR] Failed to activate micromamba environment: ${ENV_NAME}"
-    echo "[HINT] Run setup_short.sh to create/update the environment."
-    exit 1
+# --- ACTIVATE ENV ---
+if [ "$ENVTOOL" = "micromamba" ]; then
+    eval "$($ENVTOOL_CMD shell hook -s bash)"
+    micromamba activate "$ENV_NAME" || {
+        echo "[ERROR] Failed to activate micromamba environment: ${ENV_NAME}"
+        echo "[HINT] Run setup_short.sh to create/update the environment."
+        exit 1
+    }
+elif [ "$ENVTOOL" = "mamba" ] || [ "$ENVTOOL" = "conda" ]; then
+    eval "$($ENVTOOL_CMD shell.bash hook)"
+    "$ENVTOOL" activate "$ENV_NAME" || {
+        echo "[ERROR] Failed to activate $ENVTOOL environment: ${ENV_NAME}"
+        echo "[HINT] Run setup_short.sh to create/update the environment."
+        exit 1
+    }
 fi
 
 # Check if the file is provided as an argument
