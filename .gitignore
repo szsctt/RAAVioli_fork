@@ -54,3 +54,8 @@
 *.swp
 *~
 .DS_Store
+Data/OUTPUT/RESULTS/
+Data/OUTPUT/TMP-RESULTS/
+Data/genome/mixed.fa
+Data/genome/human_g1k_v37.fasta
+
