@@ -1,9 +1,7 @@
+
 counter=0
 MAXTHREADS=1;
-if [ -z "$CHRV_NAME" ]
-then
-  CHRV_NAME="chrV"
-fi
+: "${CHRV_NAME:=chrV}"
 
 if [ -z "$MAXCLUSTERD" ]
 then

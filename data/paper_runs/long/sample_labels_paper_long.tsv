@@ -1,0 +1,3 @@
+sample	sample_label	sample_name	sample_source	path
+sample1	InVivo	InVivo	InVivo	/data/home/sscott@cmri.com.au/Projects/RAAVioli/data/reads/long/prepared/InVivo.fastq.gz
+sample2	ExVivo	ExVivo	ExVivo	/data/home/sscott@cmri.com.au/Projects/RAAVioli/data/reads/long/prepared/ExVivo.fastq.gz

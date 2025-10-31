@@ -1,0 +1,7 @@
+CHRV_NAME="chrV"
+MINAAVMATCHES=30
+SUBOPTH=0
+OUTPUT_NAME="cipriani_short"
+MERGECOL="CompleteAmplificationID"
+ITR_DF=""
+system_sequences_df=""

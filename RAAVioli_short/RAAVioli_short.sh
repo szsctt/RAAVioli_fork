@@ -1,4 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
 RAAVIOLIDIR=$(pwd)
+
 echo $RAAVIOLIDIR
 export RAAVIOLIDIR
 
