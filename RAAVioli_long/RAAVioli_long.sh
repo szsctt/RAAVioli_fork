@@ -18,42 +18,152 @@ VARIABLES_STEPR=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.txt"
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo "Error: config.txt not found in $SCRIPT_DIR. Run setup.sh before running RAAVioli_long.sh"
-  exit 1
-fi
-
-ENV_NAME="RAAVioliLongRMamba_env"
-
-# --- LOCATE ENV TOOL ---
-if command -v micromamba >/dev/null 2>&1; then
-    ENVTOOL="micromamba"
-    ENVTOOL_CMD="$(command -v micromamba)"
-elif command -v mamba >/dev/null 2>&1; then
-    ENVTOOL="mamba"
-    ENVTOOL_CMD="$(command -v mamba)"
-elif command -v conda >/dev/null 2>&1; then
-    ENVTOOL="conda"
-    ENVTOOL_CMD="$(command -v conda)"
-else
-    echo "[ERROR] No environment tool (micromamba, mamba, conda) found. Please install one and run setup."
+    echo "Error: config.txt not found in $SCRIPT_DIR. Run mamba_setup.sh before running RAAVioli_long.sh"
     exit 1
 fi
 
-if [ "$ENVTOOL" = "micromamba" ]; then
-    eval "$($ENVTOOL_CMD shell hook -s bash)"
-    micromamba activate "$ENV_NAME" || {
-        echo "[ERROR] Failed to activate micromamba environment: ${ENV_NAME}"
-        exit 1
-    }
-elif [ "$ENVTOOL" = "mamba" ] || [ "$ENVTOOL" = "conda" ]; then
-    eval "$($ENVTOOL_CMD shell.bash hook)"
-    "$ENVTOOL" activate "$ENV_NAME" || {
-        echo "[ERROR] Failed to activate $ENVTOOL environment: ${ENV_NAME}"
-        exit 1
-    }
-fi
 set -euo pipefail
+
+ENV_NAME="RAAVioliLong_env"
+MICROMAMBA_CMD="${MICROMAMBA_CMD:-}"
+
+if [[ -n "$MICROMAMBA_CMD" && -x "$MICROMAMBA_CMD" ]]; then
+    echo "[INFO] Using micromamba from MICROMAMBA_CMD: $MICROMAMBA_CMD"
+elif command -v micromamba >/dev/null 2>&1; then
+    MICROMAMBA_CMD="$(command -v micromamba)"
+    echo "[INFO] Using micromamba from PATH: $MICROMAMBA_CMD"
+else
+    echo "[ERROR] micromamba not found. Please install micromamba and run mamba_setup.sh first." >&2
+    exit 1
+fi
+
+if [[ -z "${MAMBA_ROOT_PREFIX:-}" ]]; then
+    export MAMBA_ROOT_PREFIX="$SCRIPT_DIR/.micromamba"
+    echo "[INFO] Setting MAMBA_ROOT_PREFIX to $MAMBA_ROOT_PREFIX"
+else
+    echo "[INFO] Respecting existing MAMBA_ROOT_PREFIX: $MAMBA_ROOT_PREFIX"
+fi
+
+ENV_PREFIX="$MAMBA_ROOT_PREFIX/envs/$ENV_NAME"
+if [[ ! -d "$ENV_PREFIX" ]]; then
+    echo "[ERROR] Environment '$ENV_NAME' not found at $ENV_PREFIX. Run mamba_setup.sh before executing RAAVioli_long.sh." >&2
+    exit 1
+fi
+
+eval "$("$MICROMAMBA_CMD" shell hook -s bash)"
+set +u
+micromamba activate "$ENV_NAME" || {
+    echo "[ERROR] Failed to activate micromamba environment: $ENV_NAME" >&2
+    exit 1
+}
+set -u
+
 source "$CONFIG_FILE"
+
+if command -v pigz >/dev/null 2>&1; then
+    COMPRESS_CMD=(pigz -f -c)
+    DECOMPRESS_CMD=(pigz -dc)
+    echo "[INFO] Using pigz for compression and decompression."
+else
+    COMPRESS_CMD=(gzip -f -c)
+    if command -v gunzip >/dev/null 2>&1; then
+        DECOMPRESS_CMD=(gunzip -c)
+    else
+        DECOMPRESS_CMD=(zcat)
+    fi
+    echo "[INFO] pigz not found. Falling back to gzip/gunzip." >&2
+fi
+
+BWA_INDEX_SUFFIXES=(.amb .ann .bwt .pac .sa)
+
+if [[ "${FASTA_TO_CSV##*.}" == "rb" ]] && ! command -v ruby >/dev/null 2>&1; then
+    PY_FASTA_TO_CSV="$SCRIPT_DIR/scripts/fasta_to_csv.py"
+    if [[ -f "$PY_FASTA_TO_CSV" ]]; then
+        echo "[WARN] ruby not found; using Python FASTA converter at $PY_FASTA_TO_CSV" >&2
+        FASTA_TO_CSV="$PY_FASTA_TO_CSV"
+    else
+        echo "[ERROR] ruby not available and Python converter missing: cannot continue." >&2
+        exit 1
+    fi
+fi
+
+if [[ "${FASTA_TO_CSV##*.}" == "py" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[ERROR] python3 not found but required for FASTA_TO_CSV." >&2
+        exit 1
+    fi
+    FASTA_TO_CSV_CMD=(python3 "$FASTA_TO_CSV")
+else
+    FASTA_TO_CSV_CMD=(ruby "$FASTA_TO_CSV")
+fi
+
+bwa_index_current() {
+    local fasta="$1"
+    if [[ -z "$fasta" || ! -f "$fasta" ]]; then
+        return 1
+    fi
+
+    local suffix index_file
+    for suffix in "${BWA_INDEX_SUFFIXES[@]}"; do
+        index_file="${fasta}${suffix}"
+        if [[ ! -f "$index_file" || "$index_file" -ot "$fasta" ]]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+ensure_bwa_index() {
+    local fasta="$1"
+    local label="$2"
+
+    if bwa_index_current "$fasta"; then
+        echo "[INFO] Reusing existing BWA index for ${label:-$fasta}"
+    else
+        echo "[INFO] Building BWA index for ${label:-$fasta}"
+        "$BWA" index -a bwtsw "$fasta"
+    fi
+}
+
+prepare_annotation() {
+    local source_path="$1"
+    local target_dir="$2"
+
+    if [[ -z "$source_path" ]]; then
+        echo "[ERROR] Annotation path not provided." >&2
+        return 1
+    fi
+
+    if [[ ! -f "$source_path" ]]; then
+        echo "[ERROR] Annotation file not found: $source_path" >&2
+        return 1
+    fi
+
+    mkdir -p "$target_dir"
+
+    local filename="${source_path##*/}"
+    local base="${filename%.gz}"
+    local stem="${base%.gtf}"
+    local sorted_path="$target_dir/${stem}.sorted.gtf"
+    local tmp_sorted
+
+    if [[ -f "$sorted_path" && "$sorted_path" -nt "$source_path" ]]; then
+        echo "$sorted_path"
+        return 0
+    fi
+
+    tmp_sorted="$(mktemp "${sorted_path}.XXXXXX")"
+    local -a sort_cmd=(sort -t $'\t' -k1,1 -k4,4n -k5,5n)
+    if [[ "$filename" == *.gz ]]; then
+        "${DECOMPRESS_CMD[@]}" "$source_path" | LC_ALL=C "${sort_cmd[@]}" > "$tmp_sorted"
+    else
+        LC_ALL=C "${sort_cmd[@]}" "$source_path" > "$tmp_sorted"
+    fi
+
+    mv "$tmp_sorted" "$sorted_path"
+    echo "$sorted_path"
+}
 
 helpFunction()
 {
@@ -202,12 +312,15 @@ fi
 source $VARIABLES_VIRAL
 if [ ! -d "$OUTPUT_DIR" ]
 then
-    mkdir -p $OUTPUT_DIR
-    mkdir -p $OUTPUT_DIR/resources
+    mkdir "$OUTPUT_DIR"
+    mkdir "$OUTPUT_DIR/resources"
 elif [ ! -d "$OUTPUT_DIR/resources" ]
 then
-    mkdir -p $OUTPUT_DIR/resources
+    mkdir "$OUTPUT_DIR/resources"
 fi
+
+ANNOTATION_PREPARED=$(prepare_annotation "$ANNOTATION" "$OUTPUT_DIR/resources") || exit 1
+ANNOTATION="$ANNOTATION_PREPARED"
 
 # If mixed index is specified we don't need mixed genome. If neither MIXEDINDEX nor MIXEDGENOME is specified we have to create both
 if [ ! -z "$MIXEDINDEX" ]
@@ -216,22 +329,20 @@ then
 else
     if [ ! -z "$MIXEDGENOME" ]
     then
-        $BWA index -a bwtsw ${MIXEDGENOME}
+        ensure_bwa_index "$MIXEDGENOME" "mixed genome"
     else
         echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Creating mixed genome in ${OUTPUT_DIR}/resources ============"
         cp $REFGENOME $OUTPUT_DIR/resources/mixed.fa
         MIXEDGENOME="$OUTPUT_DIR/resources/mixed.fa"
         cat ${VIRALGENOME} >>  ${MIXEDGENOME}
-        echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Indexing mixed genome ============"
-        $BWA index -a bwtsw ${MIXEDGENOME}
-        echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Done ============"
+        ensure_bwa_index "$MIXEDGENOME" "mixed genome"
+        echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Mixed genome ready ============"
     fi
 fi
 
 if [ -z "$VIRALINDEX" ]
 then
-    echo "Indexing ${VIRALGENOME}"
-    $BWA index -a bwtsw ${VIRALGENOME}
+    ensure_bwa_index "$VIRALGENOME" "viral genome"
 elif [ -z "$VIRALGENOME" ]
 then
     VIRALGENOME=$VIRALINDEX
@@ -267,8 +378,8 @@ do
     bwa_mem_R="@RG\tID:${BN}\tCN:TIGET"
     list_bn+=($BN)
 
-    $BWA mem -k ${bwa_mem_k} -r ${bwa_mem_r} -A ${bwa_mem_A} -T ${bwa_mem_T} -d ${bwa_mem_d} -B ${bwa_mem_B} -O ${bwa_mem_O} \
-     -E ${bwa_mem_E} -L ${bwa_mem_L} -R ${bwa_mem_R} -t ${MAXTHREADS} ${VIRALGENOME} <( zcat ${fq_file} ) | \
+                $BWA mem -k ${bwa_mem_k} -r ${bwa_mem_r} -A ${bwa_mem_A} -T ${bwa_mem_T} -d ${bwa_mem_d} -B ${bwa_mem_B} -O ${bwa_mem_O} \
+                 -E ${bwa_mem_E} -L ${bwa_mem_L} -R ${bwa_mem_R} -t ${MAXTHREADS} ${VIRALGENOME} <( "${DECOMPRESS_CMD[@]}" "${fq_file}" ) | \
        $SAMTOOLS view -F ${PAR_FSAMTOOLS} -q $sam_view_q -uS - | \
         $SAMTOOLS sort - -o ${OUTPUT_DIR}/${BN}.${file_par_name}.q${sam_view_q}F${PAR_FSAMTOOLS}.sorted.bam
 done
@@ -308,13 +419,13 @@ do
     BN=`basename $fq_file | sed 's/.fastq.gz//g'`;
     echo "<`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Extract reads from raw data"
     cat ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.bed | cut -f4 | sort | uniq > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist
-    zcat ${fq_file} | python3 $FQEXTRACT ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist | \
-    pigz -f -c > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz
+    "${DECOMPRESS_CMD[@]}" "${fq_file}" | python3 $FQEXTRACT ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist | \
+    "${COMPRESS_CMD[@]}" > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz
 
     echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Get sequence file ============"
-    #zcat ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz | $FASTQ_TO_FASTA -Q33 | ruby $FASTA_TO_CSV | tr " " "\t" | \
+    #"${DECOMPRESS_CMD[@]}" "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA -Q33 | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
     #awk '{ print $0"\t"length($2) }' > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.seq.csv
-    zcat ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz | $FASTQ_TO_FASTA | ruby $FASTA_TO_CSV | tr " " "\t" | \
+    "${DECOMPRESS_CMD[@]}" "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
     awk '{ print $0"\t"length($2) }' > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.seq.csv
 done
 
