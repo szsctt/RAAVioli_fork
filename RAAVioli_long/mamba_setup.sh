@@ -22,66 +22,6 @@ else
   exit 1
 fi
 
-MAMBA_CMD="$ENVTOOL_CMD"
-
-
-# --- STEP 1: ENV MANAGEMENT ---
-if [ "$ENVTOOL" = "micromamba" ]; then
-  if "$ENVTOOL_CMD" env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -Fxq "$ENV_NAME"; then
-    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
-    if [[ -f "$YML_FILE" ]]; then
-      "$ENVTOOL_CMD" install -y -n "$ENV_NAME" --file "$YML_FILE" --prune
-    else
-      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
-    fi
-  else
-    echo "[INFO] Creating new environment '$ENV_NAME'..."
-    "$ENVTOOL_CMD" create -y -n "$ENV_NAME" --file "$YML_FILE"
-  fi
-elif [ "$ENVTOOL" = "mamba" ]; then
-  if "$ENVTOOL_CMD" env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -Fxq "$ENV_NAME"; then
-    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
-    if [[ -f "$YML_FILE" ]]; then
-      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
-    else
-      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
-    fi
-  else
-    echo "[INFO] Creating new environment '$ENV_NAME'..."
-    "$ENVTOOL_CMD" create -y -n "$ENV_NAME" -c conda-forge python=3.9
-    if [[ -f "$YML_FILE" ]]; then
-      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
-    fi
-  fi
-elif [ "$ENVTOOL" = "conda" ]; then
-  if "$ENVTOOL_CMD" env list | awk '{print $1}' | grep -Fxq "$ENV_NAME"; then
-    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
-    if [[ -f "$YML_FILE" ]]; then
-      "$ENVTOOL_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
-    else
-      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
-    fi
-  else
-    echo "[INFO] Creating new environment '$ENV_NAME'..."
-    "$ENVTOOL_CMD" env create -n "$ENV_NAME" -f "$YML_FILE"
-  fi
-fi
-
-# --- STEP 2: CREATE OR UPDATE MAIN ENVIRONMENT ---
-if command -v conda &> /dev/null; then
-  if conda env list | grep -q "^$ENV_NAME\\s"; then
-    echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
-    if [[ -f "$YML_FILE" ]]; then
-      "$MAMBA_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
-    else
-      echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
-    fi
-  else
-    echo "[INFO] Creating new environment '$ENV_NAME'..."
-    "$MAMBA_CMD" create -y -n "$ENV_NAME" -c conda-forge python=3.9
-    if [[ -f "$YML_FILE" ]]; then
-      "$MAMBA_CMD" env update -y -n "$ENV_NAME" -f "$YML_FILE"
-    fi
 if [[ -z "${MAMBA_ROOT_PREFIX:-}" ]]; then
   export MAMBA_ROOT_PREFIX="$DIR/.micromamba"
   echo "[INFO] Setting MAMBA_ROOT_PREFIX to $MAMBA_ROOT_PREFIX"
@@ -96,7 +36,7 @@ ENV_PREFIX="$MAMBA_ROOT_PREFIX/envs/$ENV_NAME"
 if [[ -d "$ENV_PREFIX" ]]; then
   echo "[INFO] Environment '$ENV_NAME' already exists. Updating it..."
   if [[ -f "$YML_FILE" ]]; then
-    "$MICROMAMBA_CMD" install -y -n "$ENV_NAME" --file "$YML_FILE"
+    "$MICROMAMBA_CMD" install -y -n "$ENV_NAME" --file "$YML_FILE" 
   else
     echo "[WARN] Environment file '$YML_FILE' not found. Skipping YAML update."
   fi
@@ -109,23 +49,16 @@ else
   fi
 fi
 
-
-# --- STEP 3: ACTIVATE MAIN ENVIRONMENT ---
-if [ "$ENVTOOL" = "micromamba" ]; then
-  eval "$("$ENVTOOL_CMD" shell hook -s bash)"
-  micromamba activate "$ENV_NAME"
-elif [ "$ENVTOOL" = "mamba" ] || [ "$ENVTOOL" = "conda" ]; then
-  eval "$("$ENVTOOL_CMD" shell.bash hook)"
-  "$ENVTOOL" activate "$ENV_NAME"
-fi
+# --- STEP 2: ACTIVATE MAIN ENVIRONMENT ---
+eval "$("$MICROMAMBA_CMD" shell hook -s bash)"
+set +u
+micromamba activate "$ENV_NAME"
+set -u
 
 # --- FIX LOCALE (for R LC_CTYPE errors) ---
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
 
-# --- STEP 4: INSTALL R PACKAGES VIA CONDA ---
-echo "[INFO] Installing R base packages from conda-forge..."
-"$MAMBA_CMD" install -y -n "$ENV_NAME" \
 # --- STEP 3: INSTALL R PACKAGES VIA MICROMAMBA ---
 echo "[INFO] Installing R base packages from conda-forge/bioconda using micromamba..."
 "$MICROMAMBA_CMD" install -y -n "$ENV_NAME" \
@@ -164,7 +97,7 @@ EOF
 
 # --- STEP 6: MAKE SCRIPTS EXECUTABLE ---
 chmod +x "$DIR/scripts/fqextract.pureheader.v3.py" 2>/dev/null || true
-chmod +x "$DIR/scripts/fasta_to_csv.py" 2>/dev/null || true
+chmod +x "$DIR/scripts/fasta_to_csv.rb" 2>/dev/null || true
 
 # --- STEP 7: GENERATE CONFIG FILE ---
 {
@@ -174,16 +107,13 @@ chmod +x "$DIR/scripts/fasta_to_csv.py" 2>/dev/null || true
   echo "BEDTOOLS=bedtools"
   echo "FASTQ_TO_FASTA=$DIR/scripts/fastq_to_fasta.tiget.v3.py"
   echo "FQEXTRACT=$DIR/scripts/fqextract.pureheader.v3.py"
-  echo "FASTA_TO_CSV=$DIR/scripts/fasta_to_csv.py"
+  echo "FASTA_TO_CSV=$DIR/scripts/fasta_to_csv.rb"
 } > "$CONFIG_FILE"
 
 # --- SUCCESS MESSAGE ---
 echo ""
 echo "[SUCCESS] RAAVioliLongR environment setup complete."
 echo "  - Environment name: $ENV_NAME"
-if [ "$ENVTOOL" != "mamba" ]; then
-  echo "  - Helper mamba env: $MAMBA_ENV"
-fi
 echo "  - micromamba root: $MAMBA_ROOT_PREFIX"
 echo "  - Config file: $CONFIG_FILE"
 echo "  - Log file: $LOG_DIR/versions.log"
