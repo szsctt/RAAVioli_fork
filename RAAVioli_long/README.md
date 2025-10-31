@@ -9,6 +9,7 @@ chmod +x mamba_setup.sh
 ./mamba_setup.sh
 ```
 it will install all the required tools in the bin sub-directory.
+A Ruby interpreter (>=3.1) is included automatically because the pipeline calls `scripts/fasta_to_csv.rb` during the FASTA-to-CSV conversion step.
 A *config.txt* with all needed paths will be created. 
 In case of errors please check the *error.log files to see whetever an error has occured during the installation of the tools needed.
 
