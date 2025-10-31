@@ -54,6 +54,8 @@
 *.swp
 *~
 .DS_Store
+fasterq.tmp.*
+**/log.txt
 Data/OUTPUT/RESULTS/
 Data/OUTPUT/TMP-RESULTS/
 Data/genome/mixed.fa*
