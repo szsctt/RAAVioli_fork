@@ -89,21 +89,25 @@ cigar_parsed_grouped_out <- paste0(dest_dir,basename_summary, ".CIGAR_parsed.gro
 write.table(x = reads_all_alm_by_cigar_chimera_details, file = cigar_parsed_grouped_out, 
             sep = "\t", col.names = T, row.names = F, na = '')
 print(paste(cigar_parsed_grouped_out, "done."))
+extract_gtf_attribute <- function(details, key) {
+    pattern <- paste0(key, " \"([^\"]*)\"")
+    vapply(details, function(x) {
+        if (is.null(x) || is.na(x) || x == "." || nchar(x) == 0) {
+            return(NA_character_)
+        }
+        match <- regmatches(x, regexpr(pattern, x, perl = TRUE))
+        if (length(match) == 0) {
+            NA_character_
+        } else {
+            sub(pattern, "\\1", match, perl = TRUE)
+        }
+    }, character(1), USE.NAMES = FALSE)
+}
 
-reads_all_alm_by_cigar_chimera_details_geneid <- as.data.frame(
-    t(as.data.frame(lapply(
-        strsplit(as.character(reads_all_alm_by_cigar_chimera_details$gene_details), 
-                 ';', fixed = T), function(x) {c(x)}))) )
-
-reads_all_alm_by_cigar_chimera_details_geneid_2 <- as.data.frame(t(as.data.frame(
-    lapply(
-        strsplit(as.character(reads_all_alm_by_cigar_chimera_details_geneid$V1),' ', fixed = T),
-        function(x) {c(x)}))))
-
-# ??? why geneIDcode is gene_id for all
-names(reads_all_alm_by_cigar_chimera_details_geneid_2) <- c("GeneIDcode", "GeneName")
-
-reads_all_alm_by_cigar_chimera_details <- cbind(reads_all_alm_by_cigar_chimera_details, reads_all_alm_by_cigar_chimera_details_geneid_2)
+reads_all_alm_by_cigar_chimera_details$GeneIDcode <- extract_gtf_attribute(
+    reads_all_alm_by_cigar_chimera_details$gene_details, "gene_id")
+reads_all_alm_by_cigar_chimera_details$GeneName <- extract_gtf_attribute(
+    reads_all_alm_by_cigar_chimera_details$gene_details, "gene_name")
 reads_all_alm_by_cigar_chimera_details$alm_size <- abs(reads_all_alm_by_cigar_chimera_details$end - reads_all_alm_by_cigar_chimera_details$start)
 
 cigar_parsed_grouped_ext <- paste0(dest_dir,basename_summary, ".CIGAR_parsed.grouped.ext.tsv")
