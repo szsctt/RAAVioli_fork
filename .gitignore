@@ -60,5 +60,7 @@ Data/OUTPUT/RESULTS/
 Data/OUTPUT/TMP-RESULTS/
 Data/genome/mixed.fa*
 Data/genome/human_g1k_v37.fasta*
-
-data/reads/*/*.fastq
+data/reads/*/*.fastq*
+analysis/short/output/
+analysis/short/tmp
+data/reads/short/
