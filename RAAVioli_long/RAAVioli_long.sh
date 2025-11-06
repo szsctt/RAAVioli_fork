@@ -76,25 +76,16 @@ fi
 
 BWA_INDEX_SUFFIXES=(.amb .ann .bwt .pac .sa)
 
-if [[ "${FASTA_TO_CSV##*.}" == "rb" ]] && ! command -v ruby >/dev/null 2>&1; then
-    PY_FASTA_TO_CSV="$SCRIPT_DIR/scripts/fasta_to_csv.py"
-    if [[ -f "$PY_FASTA_TO_CSV" ]]; then
-        echo "[WARN] ruby not found; using Python FASTA converter at $PY_FASTA_TO_CSV" >&2
-        FASTA_TO_CSV="$PY_FASTA_TO_CSV"
-    else
-        echo "[ERROR] ruby not available and Python converter missing: cannot continue." >&2
+if [[ "${FASTA_TO_CSV##*.}" == "rb" ]]; then
+    if ! command -v ruby >/dev/null 2>&1; then
+        echo "[ERROR] ruby not found but required for FASTA_TO_CSV." >&2
         exit 1
     fi
-fi
-
-if [[ "${FASTA_TO_CSV##*.}" == "py" ]]; then
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "[ERROR] python3 not found but required for FASTA_TO_CSV." >&2
-        exit 1
-    fi
-    FASTA_TO_CSV_CMD=(python3 "$FASTA_TO_CSV")
-else
     FASTA_TO_CSV_CMD=(ruby "$FASTA_TO_CSV")
+else
+    echo "[ERROR] Unsupported FASTA_TO_CSV helper: $FASTA_TO_CSV" >&2
+    echo "Please specify a Ruby script via config.txt." >&2
+    exit 1
 fi
 
 bwa_index_current() {
