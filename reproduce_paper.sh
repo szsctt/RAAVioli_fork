@@ -14,13 +14,13 @@ fi
 # get SRR numbers with eutils - short read
 micromamba activate RAAViolidatadownload
 mkdir -p ./data/reads/short
-esearch -db sra -query PRJNA1347036 | efetch -format runinfo | cut -d',' -f1 > data/reads/srr_numbers.txt
+esearch -db sra -query PRJNA1347036 | efetch -format runinfo | cut -d',' -f1 > data/reads/short/srr_numbers.txt
 # remove header
 sed -i '1d' data/reads/short/srr_numbers.txt
 # download fastq files
 while read -r srr; do
     echo "Downloading $srr"
-    fasterq-dump "$srr" --split-files --threads 4 -O ./data/reads/short
+    #fasterq-dump "$srr" --split-files --threads 4 -O ./data/reads/short
 done < data/reads/short/srr_numbers.txt
 
 # download metadata
@@ -34,7 +34,7 @@ sed -i '1d' data/reads/long/srr_numbers.txt
 # download fastq files
 while read -r srr; do
     echo "Downloading $srr"
-    fasterq-dump "$srr" --split-files --threads 4 -O ./data/reads/long
+    #fasterq-dump "$srr" --split-files --threads 4 -O ./data/reads/long
 done < data/reads/long/srr_numbers.txt
 
 # download metadata
@@ -45,5 +45,99 @@ esearch -db sra -query PRJNA746556 | efetch -format runinfo > data/reads/long/me
 HUMAN="Data/genome/human_g1k_v37.fasta"
 AAV="Data/genome/vector.fa"
 MIXED="Data/genome/mixed.fa"
+
+PROJECT_ROOT="$(pwd)"
+SHORT_READS_DIR="${PROJECT_ROOT}/data/reads/short"
+SHORT_SRRS_FILE="${SHORT_READS_DIR}/srr_numbers.txt"
+SHORT_R1_DIR="${SHORT_READS_DIR}/r1"
+SHORT_R2_DIR="${SHORT_READS_DIR}/r2"
+SHORT_POOL_ID="short_pool"
+
+if command -v micromamba >/dev/null 2>&1; then
+    micromamba deactivate >/dev/null 2>&1 || true
+fi
+
+if ! micromamba env list | grep -q 'RAAVioliShort_env'; then
+    pushd RAAVioli_short >/dev/null
+    ./setup_short.sh
+    popd >/dev/null
+fi
+
+mkdir -p "$SHORT_R1_DIR" "$SHORT_R2_DIR"
+
+shopt -s nullglob
+for fq1 in "${SHORT_READS_DIR}"/*_1.fastq; do
+    base=$(basename "$fq1" "_1.fastq")
+    fq2="${SHORT_READS_DIR}/${base}_2.fastq"
+    if [[ ! -f "$fq2" ]]; then
+        echo "[WARNING] Missing mate FASTQ for ${base}" >&2
+        continue
+    fi
+    gzip -f -- "$fq1"
+    gzip -f -- "$fq2"
+    mv "${SHORT_READS_DIR}/${base}_1.fastq.gz" "${SHORT_R1_DIR}/${base}.r1.fastq.gz"
+    mv "${SHORT_READS_DIR}/${base}_2.fastq.gz" "${SHORT_R2_DIR}/${base}.r2.fastq.gz"
+done
+shopt -u nullglob
+
+if [[ ! -s "$SHORT_SRRS_FILE" ]]; then
+    echo "[ERROR] No SRR numbers found for short reads." >&2
+    exit 1
+fi
+
+SHORT_ASSOC_FILE="${SHORT_READS_DIR}/association.tsv"
+{
+    echo -e "TagID\tAddedField1\tCompleteAmplificationID\tconcatenatePoolIDSeqRun"
+    awk -F',' 'NR>1 && $1!="" {print $1"\t"$1"\t"$1"\t"pool}' pool="$SHORT_POOL_ID" "${SHORT_READS_DIR}/metadata.csv"
+} > "$SHORT_ASSOC_FILE"
+
+SHORT_ANALYSIS_DIR="${PROJECT_ROOT}/analysis/short"
+SHORT_OUTPUT_DIR="${SHORT_ANALYSIS_DIR}/output"
+SHORT_TMP_DIR="${SHORT_ANALYSIS_DIR}/tmp"
+mkdir -p "$SHORT_ANALYSIS_DIR" "$SHORT_OUTPUT_DIR" "$SHORT_TMP_DIR"
+
+ALIGNMENT_VARS="${SHORT_ANALYSIS_DIR}/alignment_vars.reproduce.txt"
+ISR_VARS="${SHORT_ANALYSIS_DIR}/isr_vars.reproduce.txt"
+MANDATORY_VARS="${SHORT_ANALYSIS_DIR}/mandatory_vars.reproduce.txt"
+
+cat > "$ALIGNMENT_VARS" <<EOF
+FUSIORERRORRATE=0
+FUSION_PRIMERS="${PROJECT_ROOT}/Data/Short/files/ITR_primer.fa"
+BWA_MIN_ALN_LEN=30
+minmapQ=12
+mapQvec=12
+EOF
+
+cat > "$ISR_VARS" <<EOF
+SUBOPTH=40
+MINAAVMATCHES=30
+ITR_DF=""
+system_sequences_df=""
+MAXCLUSTERD=20
+MERGECOL="CompleteAmplificationID"
+ANNOTATIONGTF=""
+EOF
+
+cat > "$MANDATORY_VARS" <<EOF
+DISEASE="ReproduceStudy"
+PATIENT="PRJNA1347036"
+POOL="${SHORT_POOL_ID}"
+NGSWORKINGPATH="${SHORT_OUTPUT_DIR}"
+REMOVE_TMP_DIR="remove_tmp_yes"
+TMPDIR="${SHORT_TMP_DIR}"
+R1_FASTQ="${SHORT_R1_DIR}"
+R2_FASTQ="${SHORT_R2_DIR}"
+ASSOCIATIONFILE="${SHORT_ASSOC_FILE}"
+MAXTHREADS=4
+OUTPUT_NAME="reproduce"
+GENOME="${PROJECT_ROOT}/${MIXED}"
+VECTORGENOME="${PROJECT_ROOT}/${AAV}"
+alignment_vars_file="${ALIGNMENT_VARS}"
+isr_vars_file="${ISR_VARS}"
+EOF
+
+pushd RAAVioli_short >/dev/null
+bash RAAVioli_short.sh "$MANDATORY_VARS"
+popd >/dev/null
 
 
