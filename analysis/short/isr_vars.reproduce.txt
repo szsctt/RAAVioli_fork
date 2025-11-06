@@ -1,0 +1,7 @@
+SUBOPTH=40
+MINAAVMATCHES=30
+ITR_DF=""
+system_sequences_df=""
+MAXCLUSTERD=20
+MERGECOL="CompleteAmplificationID"
+ANNOTATIONGTF=""
