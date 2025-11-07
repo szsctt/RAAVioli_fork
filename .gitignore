@@ -64,3 +64,6 @@ data/reads/*/*.fastq*
 analysis/short/output/
 analysis/short/tmp
 data/reads/short/
+analysis/short
+data/reads/short/srr_numbers.txt
+data/reads/long/srr_numbers.txt

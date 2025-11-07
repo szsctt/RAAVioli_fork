@@ -40,7 +40,6 @@ done < data/reads/long/srr_numbers.txt
 # download metadata
 esearch -db sra -query PRJNA746556 | efetch -format runinfo > data/reads/long/metadata.csv
 
-
 #reference genomes:
 HUMAN="Data/genome/human_g1k_v37.fasta"
 AAV="Data/genome/vector.fa"
@@ -104,8 +103,8 @@ cat > "$ALIGNMENT_VARS" <<EOF
 FUSIORERRORRATE=0
 FUSION_PRIMERS="${PROJECT_ROOT}/Data/Short/files/ITR_primer.fa"
 BWA_MIN_ALN_LEN=30
-minmapQ=12
-mapQvec=12
+minmapQ=0
+mapQvec=0
 EOF
 
 cat > "$ISR_VARS" <<EOF
@@ -140,4 +139,10 @@ pushd RAAVioli_short >/dev/null
 bash RAAVioli_short.sh "$MANDATORY_VARS"
 popd >/dev/null
 
-
+micromamba run -n RAAVioliShort_env python analysis/short/compare_short_results.py \
+  --expected expected_results/Cipriani_etal_Table_S1.xlsx \
+  --expected-sheet shortIS \
+  --seqcount analysis/short/output/ReproduceStudy/PRJNA1347036/matrix/short_pool/SeqCount_reproduce.CLUSTER20.tsv \
+  --mapping data/paper_runs/short/run_to_tag.tsv \
+  --output-dir analysis/short/output/ReproduceStudy/PRJNA1347036/comparison \
+  --match-tolerance 5
