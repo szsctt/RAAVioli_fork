@@ -1,4 +1,5 @@
 import sys
+import os
 
 import pandas as pd
 import argparse
@@ -28,7 +29,7 @@ asso = pd.read_csv(asso_file,sep="\t")
 
 
 df = pd.read_csv(file,sep="\t")
-df['TagID'] = df['input_file'].apply(lambda x: ".".join(x.split("/")[-1].split(".")[:2]))
+df['TagID'] = df['input_file'].apply(lambda x: os.path.basename(x).split(".")[0])
 df['concatenatePoolIDSeqRun'] = pool_name
 #merge_cols = ['TagID','CompleteAmplificationID','concatenatePoolIDSeqRun','AddedField1','ExperimentID','ReplicateNumber']
 merge_cols = ['TagID','CompleteAmplificationID','concatenatePoolIDSeqRun','AddedField1']
