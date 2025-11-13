@@ -18,10 +18,9 @@ then
   MERGECOL="CompleteAmplificationID"
 fi
 
-#if [ -z "$POOLSAID" ]
-#then
-#  POOLSAID=${POOL}
-#fi
+
+# Ensure POOLSAID is defined (can legitimately be empty)
+POOLSAID="${POOLSAID-}"
 
 for TAG in "${ASSOBCLIST[@]}"; do
 	echo "<`date +'%Y-%m-%d %H:%M:%S'`> [TIGET]  Searching for chimeras"

@@ -15,13 +15,15 @@ list_files = [x for x in listdir(input_path) if x.endswith("results.R1.tsv")]
 assodf_tagid = assodf['TagID'].to_list()
 res_df = []
 for infile in list_files:
-    tag = ".".join(infile.split(".")[0:2])
+    tag = infile.split(".")[0]
     if tag in assodf_tagid:
         data = pd.read_csv(f'{input_path}/{infile}',sep="\t", dtype={'from_junc_to_plus20':'string','seq_gap':'string'})
         res_df.append(data)
 
+if not res_df:
+    raise ValueError("No results.R1.tsv files matched TagID entries. Check association file and pipeline outputs.")
 
-appended_data = pd.concat(res_df)
+appended_data = pd.concat(res_df, ignore_index=True)
 
 appended_data.to_csv(outputbn,sep="\t",index=False)
 
