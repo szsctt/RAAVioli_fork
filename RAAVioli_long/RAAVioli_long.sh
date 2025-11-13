@@ -74,6 +74,15 @@ else
     echo "[INFO] pigz not found. Falling back to gzip/gunzip." >&2
 fi
 
+decompress_fastq() {
+    local fq="$1"
+    if [[ "$fq" == *.gz ]]; then
+        "${DECOMPRESS_CMD[@]}" "$fq"
+    else
+        cat "$fq"
+    fi
+}
+
 BWA_INDEX_SUFFIXES=(.amb .ann .bwt .pac .sa)
 
 if [[ "${FASTA_TO_CSV##*.}" == "rb" ]] && ! command -v ruby >/dev/null 2>&1; then
@@ -374,12 +383,14 @@ list_bn=()
 echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Align to Vector genome and Filtering ============"
 for fq_file in "${fq_files[@]}"
 do
-    BN=`basename $fq_file | sed 's/.fastq.gz//g'`;
+    BN=$(basename "$fq_file")
+    BN=${BN%.fastq.gz}
+    BN=${BN%.fastq}
     bwa_mem_R="@RG\tID:${BN}\tCN:TIGET"
     list_bn+=($BN)
 
                 $BWA mem -k ${bwa_mem_k} -r ${bwa_mem_r} -A ${bwa_mem_A} -T ${bwa_mem_T} -d ${bwa_mem_d} -B ${bwa_mem_B} -O ${bwa_mem_O} \
-                 -E ${bwa_mem_E} -L ${bwa_mem_L} -R ${bwa_mem_R} -t ${MAXTHREADS} ${VIRALGENOME} <( "${DECOMPRESS_CMD[@]}" "${fq_file}" ) | \
+                 -E ${bwa_mem_E} -L ${bwa_mem_L} -R ${bwa_mem_R} -t ${MAXTHREADS} ${VIRALGENOME} <( decompress_fastq "${fq_file}" ) | \
        $SAMTOOLS view -F ${PAR_FSAMTOOLS} -q $sam_view_q -uS - | \
         $SAMTOOLS sort - -o ${OUTPUT_DIR}/${BN}.${file_par_name}.q${sam_view_q}F${PAR_FSAMTOOLS}.sorted.bam
 done
@@ -416,16 +427,18 @@ file_par_name="${file_par_name}.as${bam_filter_AS}"
 
 for fq_file in "${fq_files[@]}"
 do
-    BN=`basename $fq_file | sed 's/.fastq.gz//g'`;
+    BN=$(basename "$fq_file")
+    BN=${BN%.fastq.gz}
+    BN=${BN%.fastq}
     echo "<`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Extract reads from raw data"
     cat ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.bed | cut -f4 | sort | uniq > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist
-    "${DECOMPRESS_CMD[@]}" "${fq_file}" | python3 $FQEXTRACT ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist | \
+    decompress_fastq "${fq_file}" | python3 $FQEXTRACT ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.headerlist | \
     "${COMPRESS_CMD[@]}" > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz
 
     echo "[AP] ============ <`date +'%Y-%m-%d %H:%M:%S'`> [TIGET] Get sequence file ============"
-    #"${DECOMPRESS_CMD[@]}" "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA -Q33 | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
+    #decompress_fastq "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA -Q33 | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
     #awk '{ print $0"\t"length($2) }' > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.seq.csv
-    "${DECOMPRESS_CMD[@]}" "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
+    decompress_fastq "${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.fastq.gz" | $FASTQ_TO_FASTA | "${FASTA_TO_CSV_CMD[@]}" | tr " " "\t" | \
     awk '{ print $0"\t"length($2) }' > ${OUTPUT_DIR}/${BN}.${file_par_name}.sorted.slice.seq.csv
 done
 
